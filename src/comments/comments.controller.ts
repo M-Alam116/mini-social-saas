@@ -18,16 +18,20 @@ export class CommentsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get comments for a specific post with pagination' })
+  @ApiOperation({ summary: 'Get comments for a specific post with pagination & sorting' })
   @ApiQuery({ name: 'postId', required: true, example: 1 })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'sortBy', required: false, example: 'created_at' })
+  @ApiQuery({ name: 'sortOrder', required: false, example: 'asc', enum: ['asc', 'desc'] })
   async findByPost(
     @Query('postId') postId: string,
     @Query('page') page = 1,
     @Query('limit') limit = 10,
+    @Query('sortBy') sortBy = 'created_at',
+    @Query('sortOrder') sortOrder: 'asc' | 'desc' = 'asc',
   ) {
-    return this.commentsService.findByPost(+postId, +page, +limit);
+    return this.commentsService.findByPost(+postId, +page, +limit, sortBy, sortOrder);
   }
 
   @UseGuards(JwtAuthGuard)

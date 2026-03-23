@@ -1,8 +1,11 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -10,7 +13,23 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  
+  // Security headers
+  app.use(helmet());
+  
+  // Rate limiting & CORS (if needed)
+  app.enableCors();
+
+  // Standard NestJS validation
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    transform: true,
+    forbidNonWhitelisted: true,
+  }));
+
+  // Global filters and interceptors
   app.useGlobalInterceptors(new TransformInterceptor());
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   app.setGlobalPrefix('api');
 
