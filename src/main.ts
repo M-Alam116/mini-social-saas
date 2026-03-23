@@ -3,6 +3,10 @@ import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -12,7 +16,6 @@ async function bootstrap() {
     .setTitle('Mini Social SaaS API')
     .setDescription('The API documentation for the Mini Social SaaS')
     .setVersion('1.0')
-    .addTag('Social')
     .addBearerAuth()
     .build();
 
