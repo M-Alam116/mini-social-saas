@@ -1,9 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject } from '@nestjs/common';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache
+  ) { }
 
   private sanitize(user: any) {
     if (!user) return null;
@@ -12,6 +16,31 @@ export class UsersService {
     }
     const { password, ...result } = user;
     return result;
+  }
+
+
+
+  async findAll(page = 1, limit = 10, sortBy = 'created_at', sortOrder: 'asc' | 'desc' = 'desc') {
+    const skip = (page - 1) * limit;
+
+    const users = await this.prisma.users.findMany({
+      skip,
+      take: +limit,
+      orderBy: { [sortBy]: sortOrder },
+    });
+
+    const total = await this.prisma.users.count();
+
+    return {
+      result: this.sanitize(users),
+      meta: {
+        total,
+        page: +page,
+        limit: +limit,
+        totalPages: Math.ceil(total / limit),
+      },
+      message: 'Users list retrieved successfully',
+    };
   }
 
   async findOneByEmail(email: string) {
@@ -31,11 +60,6 @@ export class UsersService {
       data,
     });
     return this.sanitize(user);
-  }
-
-  async findAll() {
-    const users = await this.prisma.users.findMany();
-    return this.sanitize(users);
   }
 
   async update(id: number, data: any) {
@@ -68,6 +92,14 @@ export class UsersService {
   }
 
   async getUserProfile(userId: number) {
+    const cacheKey = `user_profile_${userId}`;
+    const cachedData = await this.cacheManager.get(cacheKey);
+    if (cachedData) {
+      console.log(`--- CACHE HIT: User Profile ${userId} ---`);
+      return cachedData;
+    }
+
+    console.log(`--- CACHE MISS: Fetching User Profile ${userId} from DB ---`);
     const stats: any[] = await this.prisma.$queryRaw`
       SELECT 
         u.id, 
@@ -92,6 +124,7 @@ export class UsersService {
       user.total_likes_made = Number(user.total_likes_made);
     }
 
+    await this.cacheManager.set(cacheKey, user, 300 * 1000); // 5 minutes
     return user;
   }
 }

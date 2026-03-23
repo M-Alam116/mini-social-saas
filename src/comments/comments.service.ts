@@ -18,14 +18,31 @@ export class CommentsService {
     });
   }
 
-  async findByPost(postId: number) {
-    return this.prisma.comments.findMany({
+  async findByPost(postId: number, page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+
+    const comments = await this.prisma.comments.findMany({
       where: { post_id: postId },
+      skip,
+      take: +limit,
       include: {
         users: { select: { name: true } },
       },
       orderBy: { created_at: 'asc' },
     });
+
+    const total = await this.prisma.comments.count({ where: { post_id: postId } });
+
+    return {
+      result: comments,
+      meta: {
+        total,
+        page: +page,
+        limit: +limit,
+        totalPages: Math.ceil(total / limit),
+      },
+      message: 'Comments retrieved successfully',
+    };
   }
 
   async remove(id: number, user: any) {

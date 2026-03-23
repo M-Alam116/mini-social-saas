@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Body, Delete, Param, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Delete, Param, UseGuards, Request, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PostsService } from './posts.service';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -18,9 +18,18 @@ export class PostsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all posts for feed' })
-  async findAll() {
-    return this.postsService.findAll();
+  @ApiOperation({ summary: 'Get all posts for feed with pagination & sorting' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'sortBy', required: false, example: 'created_at' })
+  @ApiQuery({ name: 'sortOrder', required: false, example: 'desc', enum: ['asc', 'desc'] })
+  async findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+    @Query('sortBy') sortBy = 'created_at',
+    @Query('sortOrder') sortOrder: 'asc' | 'desc' = 'desc',
+  ) {
+    return this.postsService.findAll(+page, +limit, sortBy, sortOrder);
   }
 
   @UseGuards(JwtAuthGuard)
