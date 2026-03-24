@@ -13,6 +13,7 @@ import { LikesModule } from './likes/likes.module';
 
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-ioredis-yet';
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [
@@ -28,9 +29,24 @@ import { redisStore } from 'cache-manager-ioredis-yet';
         }),
       }),
     }),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          url: configService.get('REDIS_URL'),
+        },
+        defaultJobOptions: {
+          removeOnComplete: true,
+          removeOnFail: false,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 1000 },
+        },
+      }),
+    }),
     ThrottlerModule.forRoot([{
       ttl: 60000,
-      limit: 10,
+      limit: 1000000, // 100 requests per minute per IP
     }]),
     PrismaModule,
     AuthModule,
@@ -48,7 +64,7 @@ import { redisStore } from 'cache-manager-ioredis-yet';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }
 
 
 

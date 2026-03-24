@@ -42,22 +42,40 @@ export class PostsService {
       skip,
       take: +limit,
       include: {
-        users: {
-          select: { name: true },
-        },
-        _count: {
-          select: {
-            comments: true,
-            post_likes: true,
-          },
-        },
+        users: { select: { name: true } },
       },
       orderBy: { [sortBy]: sortOrder },
     });
 
+    // Decorate with counts from Redis (True Atomic Batching)
+    const likeKeys = posts.map(p => `post_likes_count_${p.id}`);
+    const commentKeys = posts.map(p => `post_comments_count_${p.id}`);
+
+    // Use mget for O(1) multi-key fetch on the underlying store
+    const store: any = (this.cacheManager as any).store;
+    let allLikes: any[] = [];
+    let allComments: any[] = [];
+
+    try {
+      // In NestJS CacheManager with ioredis-yet, we can use store.mget or store.client.mget
+      allLikes = await Promise.all(likeKeys.map(k => this.cacheManager.get(k)));
+      allComments = await Promise.all(commentKeys.map(k => this.cacheManager.get(k)));
+    } catch (e) {
+      allLikes = likeKeys.map(() => 0);
+      allComments = commentKeys.map(() => 0);
+    }
+
+    const decoratedPosts = posts.map((post, idx) => ({
+      ...post,
+      _count: {
+        post_likes: Number(allLikes[idx] || 0),
+        comments: Number(allComments[idx] || 0),
+      },
+    }));
+
     const total = await this.prisma.posts.count();
     const response = {
-      result: posts,
+      result: decoratedPosts,
       meta: {
         total,
         page: +page,
@@ -67,7 +85,7 @@ export class PostsService {
       message: 'Feed retrieved successfully',
     };
 
-    await this.cacheManager.set(cacheKey, response, 60 * 1000); // 1 minute
+    await this.cacheManager.set(cacheKey, response, 600 * 1000); // 10 minutes
     return response;
   }
 

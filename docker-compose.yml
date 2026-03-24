@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # 1. NestJS App Clusters
+  api:
+    build: .
+    restart: unless-stopped
+    # Use Docker Compose's built-in scaling
+    # This automatically starts 3 separate containers running our PM2 image
+    deploy:
+      replicas: 3
+    environment:
+      # Connect back to your Windows Desktop's PostgreSQL instance
+      - DATABASE_URL=postgresql://postgres:alam@host.docker.internal:5432/social?schema=public
+      # Connect to the Redis container below
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=5892b189ff70e008d3e2363155811cde2f170464f7763ef8b2a3df2b376269b0
+      - JWT_ACCESS_EXPIRY=15m
+      - JWT_REFRESH_EXPIRY=7d
+      - DB_POOL_MAX=30
+      - DB_POOL_MIN=10
+    depends_on:
+      - redis
+    # Allow container to reach your Windows Host (for PostgreSQL)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 2. Redis Cache
+  redis:
+    image: redis:alpine
+    restart: always
+    ports:
+      - "6380:6379" # Map to 6380 so it doesn't conflict with your desktop Redis
+
+  # 3. Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "8080:80" # Maps localhost:8080 to Nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api

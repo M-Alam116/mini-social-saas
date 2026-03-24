@@ -1,115 +1,79 @@
 # 🚀 Mini Social SaaS API
 
-A high-performance, secure, and production-ready social media backend built with **NestJS**, **Prisma**, **PostgreSQL**, and **Redis**.
+A robust social media backend designed for stability under load, featuring asynchronous write-processing and multi-process orchestration.
 
 ---
 
-## 🛠️ Tech Stack & Features
+## 🛠️ Tech Stack & Infrastructure
 
-*   **⚡ Framework**: [NestJS](https://nestjs.com/) (Express-based)
-*   **database**: [PostgreSQL](https://www.postgresql.org/) with [Prisma ORM](https://www.prisma.io/)
-*   **🏎️ Caching**: [Redis](https://redis.io/) (Feed & Profile caching)
-*   **🔐 Auth**: Dual-JWT system (**Access** & **Refresh** tokens)
-*   **📖 API Documentation**: [Swagger (OpenAPI 3.0)](https://swagger.io/)
-*   **🛡️ Security**: Helmet, Rate Limiting (Throttler), and CORS
-*   **📦 Validation**: `class-validator` & `class-transformer`
-
----
-
-## 🌟 Core Functionality
-
-### 1. **Authentication & Authorization**
-*   Secure **Register** & **Login** with password hashing (`bcryptjs`).
-*   **Access Token** (15m expiry) & **Refresh Token** (7d expiry).
-*   Automatic token rotation with `/auth/refresh` endpoint.
-*   **Role-based Access Control**: Admin vs. User permissions.
-
-### 2. **Social Interaction Engine**
-*   **Posts**: Create, read (paginated feed), and delete posts.
-*   **Feed**: Includes author info, total likes, and total comments per post.
-*   **Comments**: Add and retrieve comments on any post (with pagination).
-*   **Likes**: Toggle like/unlike toggle on any post.
-*   **Transactions**: Ensures all toggles and state changes are atomic.
-
-### 3. **Smart User Profiles & Stats**
-*   **Detailed Analytics**: Fetch user profiles with live stats:
-    *   Total posts created.
-    *   Total likes received.
-    *   Total comments received.
-    *   Interactions made by the user.
-
-### 4. **Administrative Controls**
-*   Full admin panel endpoints to **list all users**, **update user details**, or **delete accounts/content**.
+*   **⚡ Framework**: [NestJS](https://nestjs.com/) (Module-based architecture)
+*   **🗄️ Database**: PostgreSQL with [Prisma ORM](https://www.prisma.io/)
+*   **🏎️ Caching**: Redis (ioredis) for Feed, Profile, and Aggregate hydration
+*   **📬 Message Queue**: BullMQ (Redis-based) for asynchronous write-shaving
+*   **🐳 Orchestration**: Docker Compose (Managed cluster of API, Redis, and Nginx)
+*   **⚖️ Load Balancer**: Nginx (Reverse proxy and TCP connection buffering)
+*   **⚙️ Process Management**: PM2 Cluster Mode for multi-core utilization
+*   **📖 API Docs**: Swagger (OpenAPI 3.0)
 
 ---
 
-## 🚀 Key Optimizations
+## 🚀 Performance & Hardening
 
-### **⚡ Performance**
-*   **Redis Caching**: Caches the global feed and user profile stats to reduce DB load.
-*   **Indexing**: Strategic B-Tree indexes on `user_id`, `post_id`, and `created_at` for O(1)/O(log n) lookups.
-*   **Pagination & Sorting**: Universal support for `page`, `limit`, `sortBy`, and `sortOrder` query parameters across all list APIs.
-*   **BigInt Polyfill**: Handles high-performance Raw SQL serialization automatically.
+### **1. Database Layer Hardening**
+*   **B-Tree Indexing**: Optimized for high-concurrency lookups on `user_id`, `post_id`, and `created_at`.
+*   **Atomic Operations**: Uses `createMany` with `skipDuplicates` to prevent deadlocks during simultaneous like/unlike interactions.
+*   **Smart Pooling**: Precision-tuned PostgreSQL connection pool to prevent exhaustion under heavy concurrent traffic.
 
-### **🛡️ Security**
-*   **Helmet.js**: Standardizes security headers to prevent XSS, clickjacking, etc.
-*   **Rate Limiting**: Limits requests to 10 per minute per IP to prevent brute-force attacks.
-*   **Data Sanitization**: Global filtering to ensure password hashes are **never** returned in JSON responses.
-*   **ValidationPipe**: Strict whitelisting of request bodies to prevent mass-assignment vulnerabilities.
+### **2. Asynchronous Write-Shaving**
+*   **Non-blocking Writes**: Likes and Comments are offloaded to **BullMQ** workers, removing database write latency from the API request path.
+*   **Zero-DB validation**: Authenticated requests for interactions are validated against long-lived Redis caches to eliminate redundant DB reads.
+
+### **3. Strategic Redis Caching**
+*   **Atomic Counter Caching**: Post interaction counts (likes/comments) are maintained in real-time Redis counters to avoid expensive SQL `COUNT(*)` aggregates.
+*   **Batch MGET Hydration**: The social feed utilizes Redis `MGET` batching to hydrate post metadata in a single network round-trip.
+*   **Long-Term TTL**: Aggressive caching strategy for stable data (profiles and feed metadata) to protect the primary database.
+
+### **4. Stability Verified**
+*   **High-Concurrency Testing**: System stability verified under a sustained load of **500 Virtual Users** on a single host.
+*   **Fault-Tolerant Logic**: Implemented atomic toggle logic to maintain data integrity across distributed workers.
 
 ---
 
-## 🛠️ Setup & Running
+## 🛠️ Setup & Deployment
 
 ### **1. Environment Setup**
-Create a `.env` file in the root directory:
+Create a `.env` file:
 ```env
 PORT=3000
-DATABASE_URL="postgresql://user:pass@localhost:5432/db"
+DATABASE_URL="postgresql://user:pass@localhost:5432/social"
 REDIS_URL="redis://localhost:6379"
-JWT_SECRET="your-secure-64-char-hex-key"
-JWT_ACCESS_EXPIRY="15m"
-JWT_REFRESH_EXPIRY="7d"
+JWT_SECRET="your-secure-key"
+DB_POOL_MAX=30
+DB_POOL_MIN=10
 ```
 
-### **2. Installation**
+### **2. Running with Docker (Recommended for Scale)**
+The system is pre-configured to run as a load-balanced cluster:
+```bash
+docker-compose up --build -d
+```
+*Port mapping: `localhost:8080` (Nginx Balancer) or `localhost:3000` (Direct Node).*
+
+### **3. Manual Installation (Development)**
 ```bash
 npm install
-```
-
-### **3. Database Migration**
-```bash
 npx prisma db push
-npx prisma generate
-```
-
-### **4. Run the App**
-```bash
-# Development mode
 npm run start:dev
-
-# Production mode
-npm run start:prod
 ```
-
-### **5. API Documentation**
-Once running, visit: `http://localhost:3000/api/docs`
 
 ---
 
-## 📁 Standardized Response Format
-```json
-{
-  "statusCode": 200,
-  "message": "Operation successful",
-  "data": {
-    "result": [...],
-    "meta": {
-      "total": 100,
-      "page": 1,
-      "limit": 10,
-      "totalPages": 10
-    }
-  }
-}
-```
+## 🔭 Observability
+*   **Query Profiling**: Built-in interceptor to log any SQL query exceeding 200ms.
+*   **Performance Telemetry**: Global interceptor tracking Event Loop Lag and internal request duration.
+*   **Load Testing**: Baseline scripts available in `mix-load-test.js` using `k6`.
+
+---
+
+## 📁 API Documentation
+Once running, visit: `http://localhost:8080/api/docs`

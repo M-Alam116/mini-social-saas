@@ -5,7 +5,9 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { QueryProfilerInterceptor } from './common/interceptors/query-profiler.interceptor';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { PerformanceInterceptor } from './common/interceptors/performance.interceptor';
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -27,8 +29,13 @@ async function bootstrap() {
     forbidNonWhitelisted: true,
   }));
 
+// ...
   // Global filters and interceptors
-  app.useGlobalInterceptors(new TransformInterceptor());
+  app.useGlobalInterceptors(
+    new TransformInterceptor(), 
+    new QueryProfilerInterceptor(),
+    new PerformanceInterceptor(),
+  );
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   app.setGlobalPrefix('api');
