@@ -27,7 +27,12 @@ export class PostsService {
     };
   }
 
-  async findAll(page = 1, limit = 10, sortBy = 'created_at', sortOrder: 'asc' | 'desc' = 'desc') {
+  async findAll(page = 1, limit = 10, sortBy = 'created_at', sortOrder: 'asc' | 'desc' = 'desc', userId?: number) {
+    // If sortBy is 'alive', use the special ranking logic
+    if (sortBy === 'alive') {
+      return this.getAliveFeed(userId, page, limit);
+    }
+
     const cacheKey = `posts_feed_${page}_${limit}_${sortBy}_${sortOrder}`;
     const cachedData = await this.cacheManager.get(cacheKey);
     if (cachedData) {
@@ -42,36 +47,12 @@ export class PostsService {
       skip,
       take: +limit,
       include: {
-        users: { select: { name: true } },
+        users: { select: { name: true, id: true } },
       },
       orderBy: { [sortBy]: sortOrder },
     });
 
-    // Decorate with counts from Redis (True Atomic Batching)
-    const likeKeys = posts.map(p => `post_likes_count_${p.id}`);
-    const commentKeys = posts.map(p => `post_comments_count_${p.id}`);
-
-    // Use mget for O(1) multi-key fetch on the underlying store
-    const store: any = (this.cacheManager as any).store;
-    let allLikes: any[] = [];
-    let allComments: any[] = [];
-
-    try {
-      // In NestJS CacheManager with ioredis-yet, we can use store.mget or store.client.mget
-      allLikes = await Promise.all(likeKeys.map(k => this.cacheManager.get(k)));
-      allComments = await Promise.all(commentKeys.map(k => this.cacheManager.get(k)));
-    } catch (e) {
-      allLikes = likeKeys.map(() => 0);
-      allComments = commentKeys.map(() => 0);
-    }
-
-    const decoratedPosts = posts.map((post, idx) => ({
-      ...post,
-      _count: {
-        post_likes: Number(allLikes[idx] || 0),
-        comments: Number(allComments[idx] || 0),
-      },
-    }));
+    const decoratedPosts = await this._decoratePostsWithCounts(posts);
 
     const total = await this.prisma.posts.count();
     const response = {
@@ -85,8 +66,111 @@ export class PostsService {
       message: 'Feed retrieved successfully',
     };
 
-    await this.cacheManager.set(cacheKey, response, 600 * 1000); // 10 minutes
+    await this.cacheManager.set(cacheKey, response, 300 * 1000); // 5 minutes
     return response;
+  }
+
+  async getAliveFeed(userId?: number, page = 1, limit = 10) {
+    const cacheKey = `posts_alive_feed_${userId || 'guest'}_${page}_${limit}`;
+    const cachedData = await this.cacheManager.get(cacheKey);
+    if (cachedData) {
+      console.log('--- CACHE HIT: Alive Feed ---');
+      return cachedData;
+    }
+
+    console.log('--- CACHE MISS: Calculating Alive Feed ---');
+
+    // 1. Fetch a pool of recent posts (last 200) to rank from
+    const posts = await this.prisma.posts.findMany({
+      take: 200,
+      include: {
+        users: { select: { name: true, id: true } },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    // 2. Decorate with counts
+    const postsWithCounts = await this._decoratePostsWithCounts(posts);
+
+    // 3. Get user interaction history (authors this user has liked)
+    let favoriteAuthors = new Set<number>();
+    if (userId) {
+      const recentLikes = await this.prisma.post_likes.findMany({
+        where: { user_id: userId },
+        take: 50,
+        select: { posts: { select: { user_id: true } } },
+      });
+      recentLikes.forEach((l) => {
+        if (l.posts?.user_id) favoriteAuthors.add(l.posts.user_id);
+      });
+    }
+
+    // 4. Ranking Formula: score = (likes * 2) + (comments * 3) + recency_decay
+    const now = new Date();
+    const rankedPosts = postsWithCounts.map((post) => {
+      const likes = post._count.post_likes;
+      const comments = post._count.comments;
+      const hoursSinceCreation = Math.max(0.1, (now.getTime() - new Date(post.created_at).getTime()) / 3600000);
+
+      // recency_decay: higher value for newer posts, dropping off over time
+      const recencyDecay = 24 / (hoursSinceCreation + 1);
+
+      let score = (likes * 2) + (comments * 3) + recencyDecay;
+
+      // Interaction history boost: +5 pts if you've liked this author before
+      if (post.user_id && favoriteAuthors.has(post.user_id)) {
+        score += 5;
+      }
+
+      return { ...post, score };
+    });
+
+    // 5. Sort by score (desc), with ID as a fallback for ties to ensure deterministic order
+    rankedPosts.sort((a, b) => b.score - a.score || b.id - a.id);
+
+    // 6. Paginate from pool
+    const skip = (page - 1) * limit;
+    const paginatedPosts = rankedPosts.slice(skip, skip + limit);
+
+    const response = {
+      result: paginatedPosts,
+      meta: {
+        total: Math.min(rankedPosts.length, 100), // Cap visible feed for this logic
+        page: +page,
+        limit: +limit,
+        totalPages: Math.ceil(Math.min(rankedPosts.length, 100) / limit),
+      },
+      message: 'Alive feed retrieved successfully',
+    };
+
+    await this.cacheManager.set(cacheKey, response, 60 * 1000); // Cache for 1 minute
+    return response;
+  }
+
+  private async _decoratePostsWithCounts(posts: any[]) {
+    if (posts.length === 0) return [];
+
+    const likeKeys = posts.map((p) => `post_likes_count_${p.id}`);
+    const commentKeys = posts.map((p) => `post_comments_count_${p.id}`);
+
+    let allLikes: any[] = [];
+    let allComments: any[] = [];
+
+    try {
+      allLikes = await Promise.all(likeKeys.map((k) => this.cacheManager.get(k)));
+      allComments = await Promise.all(commentKeys.map((k) => this.cacheManager.get(k)));
+    } catch (e) {
+      allLikes = likeKeys.map(() => 0);
+      allComments = commentKeys.map(() => 0);
+    }
+
+    return posts.map((post, idx) => ({
+      ...post,
+      _count: {
+        post_likes: Number(allLikes[idx] || 0),
+        comments: Number(allComments[idx] || 0),
+      },
+    }));
   }
 
   async findOne(id: number) {
