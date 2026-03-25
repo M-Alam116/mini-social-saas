@@ -45,7 +45,7 @@ export class AuthService {
         { ...payload, type: 'access' },
         {
           secret: this.configService.get<string>('JWT_SECRET') || 'secret',
-          expiresIn: (this.configService.get<string>('JWT_ACCESS_EXPIRY') || '15m') as any,
+          expiresIn: (this.configService.get<string>('JWT_ACCESS_EXPIRY') || '1d') as any,
         },
       ),
       refresh_token: this.jwtService.sign(
@@ -76,7 +76,7 @@ export class AuthService {
           { ...newPayload, type: 'access' },
           {
             secret: this.configService.get<string>('JWT_SECRET') || 'secret',
-            expiresIn: (this.configService.get<string>('JWT_ACCESS_EXPIRY') || '15m') as any,
+            expiresIn: (this.configService.get<string>('JWT_ACCESS_EXPIRY') || '1d') as any,
           },
         ),
       };

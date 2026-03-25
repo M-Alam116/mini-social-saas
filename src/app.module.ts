@@ -46,7 +46,7 @@ import { BullModule } from '@nestjs/bullmq';
     }),
     ThrottlerModule.forRoot([{
       ttl: 60000,
-      limit: 1000000, // 100 requests per minute per IP
+      limit: 100, // 100 requests per minute per IP
     }]),
     PrismaModule,
     AuthModule,

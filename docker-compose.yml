@@ -15,7 +15,7 @@ services:
       # Connect to the Redis container below
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=5892b189ff70e008d3e2363155811cde2f170464f7763ef8b2a3df2b376269b0
-      - JWT_ACCESS_EXPIRY=15m
+      - JWT_ACCESS_EXPIRY=1d
       - JWT_REFRESH_EXPIRY=7d
       - DB_POOL_MAX=30
       - DB_POOL_MIN=10
