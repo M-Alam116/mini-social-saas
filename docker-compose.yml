@@ -10,15 +10,14 @@ services:
     deploy:
       replicas: 3
     environment:
-      # Connect back to your Windows Desktop's PostgreSQL instance
-      - DATABASE_URL=postgresql://postgres:alam@host.docker.internal:5432/social?schema=public
-      # Connect to the Redis container below
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=5892b189ff70e008d3e2363155811cde2f170464f7763ef8b2a3df2b376269b0
-      - JWT_ACCESS_EXPIRY=1d
-      - JWT_REFRESH_EXPIRY=7d
-      - DB_POOL_MAX=30
-      - DB_POOL_MIN=10
+      # These will be pulled from your local .env file during deployment
+      - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://postgres:alam@host.docker.internal:5432/social?schema=public}
+      - REDIS_URL=${DOCKER_REDIS_URL:-redis://redis:6379}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ACCESS_EXPIRY=${JWT_ACCESS_EXPIRY:-1d}
+      - JWT_REFRESH_EXPIRY=${JWT_REFRESH_EXPIRY:-7d}
+      - DB_POOL_MAX=${DB_POOL_MAX:-30}
+      - DB_POOL_MIN=${DB_POOL_MIN:-10}
     depends_on:
       - redis
     # Allow container to reach your Windows Host (for PostgreSQL)
